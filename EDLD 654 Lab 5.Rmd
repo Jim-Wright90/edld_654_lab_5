@@ -1,0 +1,12 @@
+---
+title: "EDLD 654 Lab 5: Claire, Thuy, Jim"
+output:
+  html_document: 
+    toc: true
+    toc_float: true
+    theme: "journal"
+    css: "website-custom.css"
+---
+
+
+
