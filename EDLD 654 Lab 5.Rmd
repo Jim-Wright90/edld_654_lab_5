@@ -8,5 +8,160 @@ output:
     css: "website-custom.css"
 ---
 
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, include=FALSE}
+library(tidyverse)
+library(tidymodels)
+library(tune)
+library(glmnet)
+library(baguette)
+library(parsnip)
+library(doParallel)
+library(vip)
+library(pdp)
+library(patchwork)
+```
+
+# Data 
+
+```{r, include=TRUE}
+set.seed(3000)
+data <- read_csv(here::here("data", "train.csv")) %>% 
+  select(-classification)
+
+data <- dplyr::sample_frac(data, size = 0.01)
+
+sheets <- readxl::excel_sheets(here::here("data",
+"fallmembershipreport_20192020.xlsx"))
+
+ode_schools <- readxl::read_xlsx(here::here("data",
+"fallmembershipreport_20192020.xlsx"), sheet = sheets[4])
+
+ethnicities <- ode_schools %>%
+select(attnd_schl_inst_id = `Attending School ID`,
+sch_name = `School Name`,
+contains("%")) %>%
+janitor::clean_names()
+names(ethnicities) <- gsub("x2019_20_percent", "p", names(ethnicities))
+
+data <- left_join(data, ethnicities)
+head(data)
+```
+
+# Split and Resample 
+
+```{r, include=TRUE}
+set.seed(3000)
+data_split <- initial_split(data, strata = "score")
+
+set.seed(3000)
+train <- training(data_split)
+test <- testing(data_split)
+
+set.seed(3000)
+data_cv <- vfold_cv(train, strata = "score")
+
+```
+
+# Preprocess 
+
+```{r, include=FALSE}
+rec <- recipe(
+    formula = score ~ gndr + ethnic_cd + econ_dsvntg + enrl_grd, 
+    data = train 
+  ) %>%
+  step_naomit(everything(), skip = TRUE) %>% 
+  step_string2factor(gndr, ethnic_cd, econ_dsvntg) %>%  
+  step_dummy(gndr, ethnic_cd, econ_dsvntg) %>% 
+  step_normalize(enrl_grd)
+```
 
 
+# Decision Tree 
+
+```{r, include=TRUE}
+
+mod_random1 <- decision_tree() %>% 
+  set_mode("regression") %>% 
+  set_engine("rpart") %>% 
+  set_args(cost_complexity = 0.01, min_n = 5)
+
+
+
+random1_wflow <- workflow() %>%
+add_recipe(rec) %>%
+add_model(mod_random1)
+
+fit1 <- fit_resamples(random1_wflow, data_cv)
+
+collect_metrics(fit1)
+
+
+
+tune_model <- decision_tree() %>% 
+  set_mode("regression") %>% 
+  set_engine("rpart") %>% 
+  set_args(cost_complexity = tune(), min_n = tune())
+
+grd <- grid_regular(cost_complexity(), min_n(), levels = c(10, 5))
+grd
+
+
+metrics_eval <- metric_set(rmse,
+                           rsq,
+                           huber_loss)
+
+tictoc::tic()
+tune_tree <- tune_grid(tune_model, 
+                       rec, 
+                       data_cv, 
+                       grid = grd, 
+                       metrics = metrics_eval)
+tictoc::toc()
+
+show_best(tune_tree, "rmse")
+
+show_best(tune_tree, "rsq")
+
+show_best(tune_tree, "huber_loss")
+```
+
+
+# Bagged Tree
+
+```{r, include=TRUE}
+mod_bagged_tree <- bag_tree() %>% 
+  set_mode("regression") %>% 
+  set_args(cost_complexity = tune(), min_n = tune()) %>% 
+  set_engine("rpart", times = 10) 
+
+
+bagged_wflow <- workflow() %>%
+add_recipe(rec) %>%
+add_model(mod_bagged_tree)
+
+bagged_fit <- fit_resamples(bagged_wflow, data_cv)
+
+collect_metrics(fit1)
+
+
+tree_grid <- grid_max_entropy(cost_complexity(), min_n(), size = 10)
+
+
+plan(multisession)
+tic()
+bag_tune <- tune_grid(mod_bagged_tree,
+                      rec,
+                      data_cv,
+                      grid = tree_grid,
+                      metrics = metrics_eval,
+                      control = extract = function(x) extract_model(x))
+toc()
+
+
+
+
+```
