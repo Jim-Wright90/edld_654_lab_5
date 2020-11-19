@@ -78,6 +78,8 @@ rec <- recipe(
   step_string2factor(gndr, ethnic_cd, econ_dsvntg) %>%  
   step_dummy(gndr, ethnic_cd, econ_dsvntg) %>% 
   step_normalize(enrl_grd)
+
+prep(rec)
 ```
 
 # Decision Tree 
@@ -94,7 +96,7 @@ mod_random1 <- decision_tree() %>%
 
 
 random1_wflow <- workflow() %>%
-add_recipe(rec2) %>%
+add_recipe(rec) %>%
 add_model(mod_random1)
 
 fit1 <- fit_resamples(random1_wflow, data_cv)
@@ -121,7 +123,7 @@ metrics_eval <- metric_set(rmse,
 
 tictoc::tic()
 tune_tree <- tune_grid(tune_model, 
-                       rec2, 
+                       rec, 
                        data_cv, 
                        grid = grd, 
                        metrics = metrics_eval)
@@ -139,6 +141,11 @@ show_best(tune_tree, "rsq")
 show_best(tune_tree, "huber_loss")
 ```
 
+
+
+
+
+
 # Bagged Tree
 
 ## Model and Workflow
@@ -146,34 +153,42 @@ show_best(tune_tree, "huber_loss")
 ```{r, include=TRUE}
 mod_bagged_tree <- bag_tree() %>% 
   set_mode("regression") %>% 
-  set_args(cost_complexity = tune(), min_n = tune()) %>% 
+  set_args(cost_complexity = 0, min_n = 2) %>% 
   set_engine("rpart", times = 10) 
 
 
 bagged_wflow <- workflow() %>%
-add_recipe(rec2) %>%
+add_recipe(rec) %>%
 add_model(mod_bagged_tree)
 
 bagged_fit <- fit_resamples(bagged_wflow, data_cv)
 
-collect_metrics(mod_bagged_tree)
+collect_metrics(bagged_fit)
 ```
 
 ## Tune
 
 ```{r, include=TRUE}
+
+bag_model_tune <- bag_tree() %>% 
+  set_mode("regression") %>% 
+  set_args(cost_complexity = tune(), min_n = tune()) %>% 
+  set_engine("rpart", times = 10)
+
+
 tree_grid <- grid_max_entropy(cost_complexity(), min_n(), size = 10)
 
 
+
 plan(multisession)
-tic()
-bag_tune <- tune_grid(mod_bagged_tree,
+tictoc::tic()
+bag_tune <- tune_grid(bag_model_tune,
                       rec,
                       data_cv,
                       grid = tree_grid,
                       metrics = metrics_eval,
-                      control = extract = function(x) extract_model(x))
-toc()
+                      extract = function(x) extract_model(x))
+tictoc::toc()
 ```
 
 ## Best Estimates 
@@ -212,13 +227,18 @@ bag_roots <- function(x){
 
 ```
 
+
+
+
+
+
 # Random Forest 
 
 ## Model 
 
 ```{r, include=TRUE}
 
-?rand_forest
+
 
 floor(sqrt(39))
 
