@@ -74,7 +74,6 @@ data_cv <- vfold_cv(train, strata = "score")
 
 ```{r, include=FALSE}
 rec <- recipe(
-    #formula = score ~ gndr + ethnic_cd + econ_dsvntg + enrl_grd, 
     formula = score ~ ., data = train 
   ) %>%
  step_mutate(tst_dt = lubridate::mdy_hms(tst_dt)) %>%
@@ -85,12 +84,9 @@ rec <- recipe(
  step_nzv(all_predictors(), freq_cut = 0, unique_cut = 0) %>%
  step_dummy(all_nominal(), -has_role(match = "id"), -all_outcomes()) %>%
  step_nzv(all_predictors())
-  # step_naomit(everything(), skip = TRUE) %>% 
-  # step_string2factor(gndr, ethnic_cd, econ_dsvntg) %>%  
-  # step_dummy(gndr, ethnic_cd, econ_dsvntg) %>% 
-  # step_normalize(enrl_grd)
 
-prep(rec)
+
+prep(rec)  # do we need save this as an object
 ```
 
 # Decision Tree 
@@ -112,12 +108,14 @@ add_recipe(rec) %>%
 add_model(tune_model)
 
 # Can we take this out now b/c here we're asked to creat workflow object only ?
-# fit1 <- fit_resamples(decisiontree_wflow, data_cv)
+# is this base model that we are going compare with?
+#fit1 <- fit_resamples(decisiontree_wflow, data_cv)
 # collect_metrics(fit1)
 
 # 3. Tune your model with tune_grid
 
-grd <- grid_regular(cost_complexity(), min_n(), levels = c(10, 5)) # is that meant by "Use grid = 10 to choose 10 grid points automatically"? 
+grd <- grid_regular(cost_complexity(), min_n(), levels = c(10, 5)) # is that meant by "Use grid = 10 to choose 10 grid points automatically"? Isn't this cost_ = 10 and min = 5?
+# where to put grid = 10 to choose 10 grid points automatically?? 
 grd
 
 metrics_eval <- metric_set(rmse,
@@ -131,6 +129,8 @@ tune_tree <- tune_grid(tune_model,
                        grid = grd, 
                        metrics = metrics_eval)
 tictoc::toc()
+
+# the time it takes to run: 353.078 sec elapsed
 
 ```
 
@@ -175,7 +175,7 @@ add_model(bag_model_tune)
 
 tree_grid <- grid_max_entropy(cost_complexity(), min_n(), size = 10) # Is this "Use grid = 10 to choose 10 grid points automatically" ?
 
-plan(multisession)
+#plan(multisession) # can't run plan
 tictoc::tic()
 bag_tune <- tune_grid(bag_model_tune,
                       rec,
@@ -184,6 +184,11 @@ bag_tune <- tune_grid(bag_model_tune,
                       metrics = metrics_eval, # use the same 3 metrics as in question 2
                       extract = function(x) extract_model(x))
 tictoc::toc()
+
+
+# finalize model
+
+
 ```
 
 ## Best Estimates 
@@ -225,14 +230,10 @@ bag_roots(???)
 ## Plot
 
 ```{r, include=TRUE}
-#Produce a plot of the frequency of features at the root node of the trees in your bagged model.
+#Produce a plot of the frequency of features at the root node of the trees in your bagged model. --> slide w8p1
 
-bags_reg %>% 
-  mutate(b = seq(1, 500, 25)) %>% 
-  ggplot(aes(b, rmse)) +
-  geom_line() +
-  geom_point() +
-  geom_vline(xintercept = 155, color = "magenta", lwd = 1.3)
+rf_tune_res$.extracts[[1]]$.extracts[[1]] %>%
+vip()
 
 ```
 
