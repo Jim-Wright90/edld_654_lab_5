@@ -50,6 +50,9 @@ names(ethnicities) <- gsub("x2019_20_percent", "p", names(ethnicities))
 
 data <- left_join(data, ethnicities)
 head(data)
+colnames(data)
+data %>% 
+  select(sch_name)
 ```
 
 # Split and Resample 
@@ -71,13 +74,21 @@ data_cv <- vfold_cv(train, strata = "score")
 
 ```{r, include=FALSE}
 rec <- recipe(
-    formula = score ~ gndr + ethnic_cd + econ_dsvntg + enrl_grd, 
-    data = train 
+    #formula = score ~ gndr + ethnic_cd + econ_dsvntg + enrl_grd, 
+    formula = score ~ ., data = train 
   ) %>%
-  step_naomit(everything(), skip = TRUE) %>% 
-  step_string2factor(gndr, ethnic_cd, econ_dsvntg) %>%  
-  step_dummy(gndr, ethnic_cd, econ_dsvntg) %>% 
-  step_normalize(enrl_grd)
+ step_mutate(tst_dt = lubridate::mdy_hms(tst_dt)) %>%
+ update_role(contains("id"), ncessch, sch_name, new_role = "id") %>%
+ step_novel(all_nominal(), -all_outcomes()) %>%
+ step_unknown(all_nominal(), -all_outcomes()) %>%
+ step_medianimpute(all_numeric()) %>%
+ step_nzv(all_predictors(), freq_cut = 0, unique_cut = 0) %>%
+ step_dummy(all_nominal(), -has_role(match = "id"), -all_outcomes()) %>%
+ step_nzv(all_predictors())
+  # step_naomit(everything(), skip = TRUE) %>% 
+  # step_string2factor(gndr, ethnic_cd, econ_dsvntg) %>%  
+  # step_dummy(gndr, ethnic_cd, econ_dsvntg) %>% 
+  # step_normalize(enrl_grd)
 
 prep(rec)
 ```
@@ -91,8 +102,8 @@ prep(rec)
 mod_random1 <- decision_tree() %>% 
   set_mode("regression") %>% 
   set_engine("rpart") %>% 
-  set_args(cost_complexity = 0.01, min_n = 5)
-
+  set_args(cost_complexity = tune(), 
+           min_n = tune())
 
 
 random1_wflow <- workflow() %>%
