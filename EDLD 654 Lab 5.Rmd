@@ -98,35 +98,27 @@ prep(rec)
 ## Model and Workflow
 
 ```{r, include=TRUE}
-
-mod_random1 <- decision_tree() %>% 
-  set_mode("regression") %>% 
-  set_engine("rpart") %>% 
-  set_args(cost_complexity = tune(), 
-           min_n = tune())
-
-
-random1_wflow <- workflow() %>%
-add_recipe(rec) %>%
-add_model(mod_random1)
-
-fit1 <- fit_resamples(random1_wflow, data_cv)
-
-collect_metrics(fit1)
-
-```
-
-## Tune
-
-```{r, include=TRUE}
+# 1. Create a parsnip CART model using{rpart} for the estimation, tuning the cost complexity and minimum n for a terminal node.
 tune_model <- decision_tree() %>% 
   set_mode("regression") %>% 
   set_engine("rpart") %>% 
-  set_args(cost_complexity = tune(), min_n = tune())
+  set_args(cost_complexity = tune(), #slide 48 W7p1
+           min_n = tune())
 
-grd <- grid_regular(cost_complexity(), min_n(), levels = c(10, 5))
+# 2. Create a workflow object that combines your recipe and your parsnip objects.
+
+decisiontree_wflow <- workflow() %>%
+add_recipe(rec) %>%
+add_model(tune_model)
+
+# Can we take this out now b/c here we're asked to creat workflow object only ?
+# fit1 <- fit_resamples(decisiontree_wflow, data_cv)
+# collect_metrics(fit1)
+
+# 3. Tune your model with tune_grid
+
+grd <- grid_regular(cost_complexity(), min_n(), levels = c(10, 5)) # is that meant by "Use grid = 10 to choose 10 grid points automatically"? 
 grd
-
 
 metrics_eval <- metric_set(rmse,
                            rsq,
@@ -145,51 +137,43 @@ tictoc::toc()
 ## Best Estimates 
 
 ```{r, include=TRUE}
+# Show the best estimates for each of the three performance metrics and the tuning parameter values associated with each.
+
 show_best(tune_tree, "rmse")
+select_best(tune_tree,"rmse")
 
 show_best(tune_tree, "rsq")
+select_best(tune_tree,"rsq")
 
 show_best(tune_tree, "huber_loss")
+select_best(tune_tree,"huber_loss")
+
+#note: cross three metrics, model48 is the best, both values of cost_complexity and min_n remain the same
 ```
-
-
-
-
-
 
 # Bagged Tree
 
 ## Model and Workflow
 
 ```{r, include=TRUE}
-mod_bagged_tree <- bag_tree() %>% 
-  set_mode("regression") %>% 
-  set_args(cost_complexity = 0, min_n = 2) %>% 
-  set_engine("rpart", times = 10) 
-
-
-bagged_wflow <- workflow() %>%
-add_recipe(rec) %>%
-add_model(mod_bagged_tree)
-
-bagged_fit <- fit_resamples(bagged_wflow, data_cv)
-
-collect_metrics(bagged_fit)
-```
-
-## Tune
-
-```{r, include=TRUE}
-
+# 1. Create a parsnip bagged tree model using{baguette}
 bag_model_tune <- bag_tree() %>% 
   set_mode("regression") %>% 
   set_args(cost_complexity = tune(), min_n = tune()) %>% 
-  set_engine("rpart", times = 10)
+  set_engine("rpart", times = 10) 
 
+#2. Create a workflow object that combines your recipe and your bagged tree model specification.
+bagged_wflow <- workflow() %>%
+add_recipe(rec) %>%
+add_model(bag_model_tune)
 
-tree_grid <- grid_max_entropy(cost_complexity(), min_n(), size = 10)
+# Do we need this here? 
+# bagged_fit <- fit_resamples(bagged_wflow, data_cv)
+# collect_metrics(bagged_fit)
 
+# 3. Tune your model with tune_grid
 
+tree_grid <- grid_max_entropy(cost_complexity(), min_n(), size = 10) # Is this "Use grid = 10 to choose 10 grid points automatically" ?
 
 plan(multisession)
 tictoc::tic()
@@ -197,7 +181,7 @@ bag_tune <- tune_grid(bag_model_tune,
                       rec,
                       data_cv,
                       grid = tree_grid,
-                      metrics = metrics_eval,
+                      metrics = metrics_eval, # use the same 3 metrics as in question 2
                       extract = function(x) extract_model(x))
 tictoc::toc()
 ```
@@ -208,10 +192,13 @@ Answer to question prior to running code:
 
 ```{r, include=TRUE}
 show_best(bag_tune, "rmse")
+select_best(bag_tune, "rmse")
 
 show_best(bag_tune, "rsq")
+select_best(bag_tune, "rsq")
 
 show_best(bag_tune, "huber_loss")
+select_best(bag_tune, "huber_loss")
 ```
 
 ## Bag Roots Function
@@ -229,12 +216,23 @@ bag_roots <- function(x){
                      ~as.character(.x$fit$frame[1, 1]))) %>%
   select(root)  
 }
+
+# output the feature at the root node for each of the decision trees fit.
+bag_roots(???)
+
 ```
 
 ## Plot
 
 ```{r, include=TRUE}
+#Produce a plot of the frequency of features at the root node of the trees in your bagged model.
 
+bags_reg %>% 
+  mutate(b = seq(1, 500, 25)) %>% 
+  ggplot(aes(b, rmse)) +
+  geom_line() +
+  geom_point() +
+  geom_vline(xintercept = 155, color = "magenta", lwd = 1.3)
 
 ```
 
