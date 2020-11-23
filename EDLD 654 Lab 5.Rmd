@@ -24,6 +24,7 @@ library(vip)
 library(pdp)
 library(patchwork)
 library(ranger)
+library(future)
 ```
 
 # Data 
@@ -72,7 +73,7 @@ data_cv <- vfold_cv(train, strata = "score")
 
 # Preprocess 
 
-```{r, include=FALSE}
+```{r, include=TRUE}
 rec <- recipe(
     formula = score ~ ., data = train 
   ) %>%
@@ -84,6 +85,7 @@ rec <- recipe(
  step_nzv(all_predictors(), freq_cut = 0, unique_cut = 0) %>%
  step_dummy(all_nominal(), -has_role(match = "id"), -all_outcomes()) %>%
  step_nzv(all_predictors())
+
 
 
 prep(rec)  # do we need save this as an object
@@ -175,17 +177,19 @@ add_model(bag_model_tune)
 
 tree_grid <- grid_max_entropy(cost_complexity(), min_n(), size = 10) # Is this "Use grid = 10 to choose 10 grid points automatically" ?
 
-#plan(multisession) # can't run plan
+plan(multisession) 
 tictoc::tic()
 bag_tune <- tune_grid(bag_model_tune,
                       rec,
                       data_cv,
                       grid = tree_grid,
-                      metrics = metrics_eval, # use the same 3 metrics as in question 2
-                      extract = function(x) extract_model(x))
+                      metrics = metrics_eval, 
+                      control = control_resamples(verbose = TRUE,
+                                                  save_pred = TRUE,
+                                                  extract = function(x) extract_model(x)))
 tictoc::toc()
 
-
+# time elapsed 164.882 seconds 
 # finalize model
 
 
@@ -223,7 +227,9 @@ bag_roots <- function(x){
 }
 
 # output the feature at the root node for each of the decision trees fit.
-bag_roots(???)
+bag_roots(bag_tune)
+
+root <- bag_roots(bag_tune)
 
 ```
 
@@ -232,8 +238,14 @@ bag_roots(???)
 ```{r, include=TRUE}
 #Produce a plot of the frequency of features at the root node of the trees in your bagged model. --> slide w8p1
 
-rf_tune_res$.extracts[[1]]$.extracts[[1]] %>%
-vip()
+
+root_count <- root %>% 
+  count(root)
+
+ggplot(root_count, aes(fct_reorder(root, n), n)) +
+  geom_col() +
+  coord_flip()
+
 
 ```
 
@@ -263,7 +275,7 @@ rf_def_mod <-
   set_mode("regression") %>% 
   set_args(mtry = NULL,
            trees = 1000,
-           min_n = NULL)
+           min_n = NULL) #doesn't run when mtry and min_n are tuned - have to be null to fit model two code chunks below 
            
 
 translate(rf_def_mod)
@@ -301,7 +313,7 @@ head(rf_def_res)
 ```{r, include=TRUE}
 show_best(rf_def_res, "rmse")
 
-show_best(rf_des_res, "rsq") #not sure why this line isn't running
+show_best(rf_def_res, "rsq") 
 
 show_best(rf_def_res, "huber_loss")
 ```
@@ -331,20 +343,86 @@ rf_roots <- function(x){
 
 rf_roots(rf_def_res)
 
+forest_roots <- rf_roots(rf_def_res)
+
 ```
 
 ## Plot
 
 ```{r, include=TRUE}
-head(rf_def_res)
+rf_root_count <- forest_roots %>% 
+  count(roots)
 
-rf_def_res %>% 
-  pluck(".workflow", 1)
+ggplot(rf_root_count, aes(fct_reorder(roots, n), n)) +
+  geom_col() +
+  coord_flip()
 
-rf_def_res %>% 
-  pluck(".workflow", 1) %>% 
-  pull_workflow_fit() %>% 
-  vip()
 
-rlang::last_error()
+
 ```
+
+7. The plots appear different because the bagged tree applies all of the predictors, and the most important are selected more often. Conversely, the random forest model uses only a subset of predictors to split the root, so there is a greater chance for the less important predictors to be chosen. 
+
+## Apply Fit Function to Workflow and Full Training 
+
+```{r, include=TRUE}
+tictoc::tic()
+fit_rf_workflow <- fit(rf_wflow, train)
+tictoc::toc()
+
+#1.696 seconds elapsed 
+
+
+fit_rf_workflow
+
+# OOB Prediction error (MSE): 9793.118
+
+sqrt(9793.118)
+
+# RMSE = 98.96
+
+sqrt(fit_rf_workflow$fit$fit$fit$prediction.error)
+```
+
+OOB RMSE = 98.96
+
+10 fold CV RMSE = 98.3 
+
+There is less variance and higher bias in the random forest 10-fold CV model than the random forest OOB. The 10-fold CV likely influences less variance and more bias in the model. 
+
+# Compare Performance 
+
+
+
+```{r, include=TRUE}
+select_best(tune_tree,"rmse")
+select_best(bag_tune, "rmse")
+select_best(rf_def_res, "rmse")
+
+tune_tree %>% 
+  collect_metrics()
+
+bag_tune %>% 
+  collect_metrics()
+
+rf_def_res %>% 
+  collect_metrics(metric = "rmse")
+
+
+#library(stacks)
+
+#wind_data_st <- 
+ # stacks() %>%
+  #add_candidates(tune_tree) %>%
+  #add_candidates(bag_tune) %>%
+  #add_candidates(rf_def_res) %>% 
+  #add_candidates(fit_rf_workflow)
+
+# couldn't download stack() package
+
+
+
+```
+
+
+
