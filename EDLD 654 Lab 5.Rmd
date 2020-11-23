@@ -295,7 +295,7 @@ rf_def_res <- fit_resamples(
                               save_pred = TRUE,
                               extract = function(x) x)
                               )
-tictoc::tic()
+tictoc::toc()
 
 head(rf_def_res)
 ```
